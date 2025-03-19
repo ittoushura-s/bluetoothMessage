@@ -1,10 +1,8 @@
 package com.example.communication
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -22,13 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.*
-import com.example.communication.ui.theme.CommunicationTheme
 
 private var connectedSocket: BluetoothSocket? = null
 
@@ -37,9 +33,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            CommunicationTheme {
-                BluetoothScreen()
-            }
+            BluetoothScreen()
         }
     }
 }
@@ -54,10 +48,11 @@ fun BluetoothScreen() {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    val isListening = remember { mutableStateOf(false) } // ✅ Track if Phone B is listening
+
     val messageToSend = remember { mutableStateOf(TextFieldValue("")) }
     val receivedMessage = remember { mutableStateOf("") }
 
-    // Function to send message via Bluetooth
     fun sendMessage(message: String) {
         val socket = connectedSocket
         if (socket != null && socket.isConnected) {
@@ -81,7 +76,6 @@ fun BluetoothScreen() {
         }
     }
 
-    // Function to listen for incoming messages
     fun startListeningForMessages(socket: BluetoothSocket) {
         scope.launch(Dispatchers.IO) {
             try {
@@ -94,6 +88,7 @@ fun BluetoothScreen() {
 
                     scope.launch(Dispatchers.Main) {
                         receivedMessage.value = message
+                        snackbarHostState.showSnackbar("Received: $message") // ✅ SHOW MESSAGE ON PHONE B
                     }
                 }
             } catch (e: IOException) {
@@ -135,7 +130,6 @@ fun BluetoothScreen() {
         }
     }
 
-    // Function to start Bluetooth server (For Phone B)
     fun startBluetoothServer() {
         val uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
@@ -143,6 +137,10 @@ fun BluetoothScreen() {
             val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
             val serverSocket: BluetoothServerSocket? =
                 bluetoothAdapter?.listenUsingRfcommWithServiceRecord("BTServer", uuid)
+
+            withContext(Dispatchers.Main) {
+                isListening.value = true // ✅ Indicate that Phone B is in listening mode
+            }
 
             try {
                 val socket = serverSocket?.accept()
@@ -155,6 +153,7 @@ fun BluetoothScreen() {
                         Toast.LENGTH_SHORT
                     ).show()
                     selectedDevice.value = socket?.remoteDevice
+                    isListening.value = false // ✅ Stop indicating listening after connection
                 }
 
                 if (socket != null) {
@@ -164,6 +163,7 @@ fun BluetoothScreen() {
             } catch (e: IOException) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Server error: ${e.message}", Toast.LENGTH_LONG).show()
+                    isListening.value = false
                 }
             }
         }
@@ -209,10 +209,14 @@ fun BluetoothScreen() {
                 }
             }
 
-            // Button to start Bluetooth Server (for Phone B)
             Button(onClick = { startBluetoothServer() }) {
                 Text("Start Listening")
             }
+
+            if (isListening.value) { // ✅ Show this only when Phone B is in listening mode
+                Text("Listening for connections...", modifier = Modifier.padding(8.dp))
+            }
+
         } else {
             Column {
                 Text("Connected to: ${selectedDevice.value?.name ?: "Unknown"}")
